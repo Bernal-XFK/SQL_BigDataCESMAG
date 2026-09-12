@@ -4,10 +4,6 @@
 -- Este push dispara el webhook -> GCS -> BigQuery
 
 SELECT
-  id_cliente,
-  nombre,
-  email
-FROM `proyecto.dataset.clientes`
-LIMIT 100;
--- prueba e2e
--- prueba e2e
+  1 AS id_cliente,
+  'Andres' AS nombre,
+  'andres@cesmag.edu' AS email;
