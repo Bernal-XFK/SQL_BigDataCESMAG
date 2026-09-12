@@ -9,3 +9,5 @@ SELECT
   email
 FROM `proyecto.dataset.clientes`
 LIMIT 100;
+-- prueba e2e
+-- prueba e2e
