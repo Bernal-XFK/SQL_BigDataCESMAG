@@ -2,3 +2,8 @@ __pycache__/
 .venv/
 *.pyc
 .env
+.env.local
+node_modules/
+dist/
+dashboard/dist/
+dashboard/node_modules/

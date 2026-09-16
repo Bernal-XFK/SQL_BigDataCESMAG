@@ -15,6 +15,9 @@ COMPOSER_ENV = os.getenv("COMPOSER_ENV", "")
 COMPOSER_REGION = os.getenv("COMPOSER_REGION", "us-central1")
 DAG_ID = os.getenv("DAG_ID", "sql_validation_dag")
 AIRFLOW_WEBSERVER_URL = os.getenv("AIRFLOW_WEBSERVER_URL", "")
+# API de lectura para el dashboard (no rompe github_webhook)
+RESULTS_TABLE = os.getenv("RESULTS_TABLE", "validaciones.resultados")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
 
 
 def _get_secret(secret_id: str) -> str:
@@ -164,3 +167,116 @@ def github_webhook(request):
         _trigger_dag(f"gs://{RAW_BUCKET}/{dest}", commit_sha, author, repo_file)
 
     return (f"processed {len(sql_files)} files", 200)
+
+
+def _allowed_origin(request):
+    """Resuelve el origen CORS permitido (env ALLOWED_ORIGINS, coma-separada)."""
+    configured = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()] or ["http://localhost:5173"]
+    origin = request.headers.get("Origin", "")
+    if origin in configured:
+        return origin
+    if "*" in configured:
+        return "*"
+    return configured[0]
+
+
+def _cors_headers(request):
+    origin = _allowed_origin(request)
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "3600",
+    }
+
+
+def _format_timestamp(value):
+    """Formato dashboard '2023-10-25 10:00 AM'; si no se puede, devuelve ISO/str."""
+    if value is None:
+        return ""
+    # BigQuery puede devolver datetime/date o string ISO.
+    try:
+        from datetime import datetime, date
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, date):
+            dt = datetime(value.year, value.month, value.day)
+        else:
+            text = str(value).strip()
+            if not text:
+                return ""
+            # Soporta '2023-10-25T10:00:00', con Z o con offset.
+            candidate = text.replace("Z", "+00:00")
+            try:
+                dt = datetime.fromisoformat(candidate)
+            except ValueError:
+                # Ya viene en formato display u otro string: devolver tal cual.
+                return text
+        return dt.strftime("%Y-%m-%d %I:%M %p")
+    except Exception:
+        return str(value)
+
+
+def executions_api(request):
+    """API de lectura para el dashboard. GET + OPTIONS con CORS.
+
+    Env:
+      RESULTS_TABLE (default validaciones.resultados)
+      ALLOWED_ORIGINS (default http://localhost:5173, coma-separada)
+      GCP_PROJECT (proyecto para el cliente BigQuery)
+    """
+    headers = _cors_headers(request)
+    headers["Content-Type"] = "application/json"
+
+    # Preflight CORS
+    if request.method == "OPTIONS":
+        return ("", 204, headers)
+
+    if request.method != "GET":
+        return (json.dumps({"error": "method_not_allowed",
+                            "hint": "Usa GET (u OPTIONS para preflight CORS)."}),
+                405, headers)
+
+    table = os.getenv("RESULTS_TABLE", RESULTS_TABLE)
+    query = (
+        "SELECT commit_sha, author, repo_file, gcs_path, job_id, "
+        "estimated_bytes, validated_at, status "
+        f"FROM `{table}` ORDER BY validated_at DESC LIMIT 100"
+    )
+    try:
+        from google.cloud import bigquery
+        client_kwargs = {"project": PROJECT_ID} if PROJECT_ID else {}
+        client = bigquery.Client(**client_kwargs)
+        rows = list(client.query(query).result())
+    except ImportError:
+        return (json.dumps({"error": "bigquery_lib_missing",
+                            "hint": "Falta google-cloud-bigquery en requirements.txt. "
+                                    "Añade 'google-cloud-bigquery' y redespliega."}),
+                500, headers)
+    except Exception:
+        # Sin stacktrace: mensaje genérico + hint accionable.
+        return (json.dumps({"error": "bigquery_query_failed",
+                            "hint": f"No se pudo leer BigQuery. Verifica GCP_PROJECT, "
+                                    f"que exista la tabla {table} "
+                                    f"(ver DEPLOY.md sección API) y que la Service Account "
+                                    f"tenga BigQuery Job User + Data Viewer."}),
+                500, headers)
+
+    # Tabla vacía -> [] para que el frontend use su fallback local solo en dev.
+    data = []
+    for i, row in enumerate(rows):
+        get = row.get if hasattr(row, "get") else lambda k, d=None: row[k] if k in row else d
+        try:
+            author = get("author") or "Desconocido"
+            repo_file = get("repo_file") or get("gcs_path") or ""
+            status = (get("status") or "")
+            data.append({
+                "id": i + 1,
+                "studentName": author,
+                "folderName": repo_file,
+                "queryStatus": "success" if str(status).upper() == "SUCCESS" else "error",
+                "timestamp": _format_timestamp(get("validated_at")),
+            })
+        except Exception:
+            continue
+    return (json.dumps(data), 200, headers)
