@@ -2,3 +2,4 @@ functions-framework==3.*
 google-cloud-storage
 google-cloud-secret-manager
 requests
+google-auth
