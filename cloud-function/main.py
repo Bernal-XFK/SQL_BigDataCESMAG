@@ -6,15 +6,15 @@ import base64
 import requests
 from google.cloud import storage, secretmanager
 
-# Config via env vars (ver README despliegue)
+# Config via env vars (con fallbacks para que nunca queden vacíos)
 GITHUB_TOKEN_SECRET = os.getenv("GITHUB_TOKEN_SECRET", "github-token")
 WEBHOOK_SECRET_NAME = os.getenv("WEBHOOK_SECRET_NAME", "github-webhook-secret")
-PROJECT_ID = os.getenv("GCP_PROJECT", "")
-RAW_BUCKET = os.getenv("RAW_BUCKET", "cesmag-sql-raw")
-COMPOSER_ENV = os.getenv("COMPOSER_ENV", "")
-COMPOSER_REGION = os.getenv("COMPOSER_REGION", "us-central1")
-DAG_ID = os.getenv("DAG_ID", "sql_validation_dag")
-AIRFLOW_WEBSERVER_URL = os.getenv("AIRFLOW_WEBSERVER_URL", "")
+PROJECT_ID = os.getenv("GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID") or "infrabigdataces"
+RAW_BUCKET = os.getenv("RAW_BUCKET") or "cesmag-sql-raw"
+COMPOSER_ENV = os.getenv("COMPOSER_ENV") or "cesmag-composer"
+COMPOSER_REGION = os.getenv("COMPOSER_REGION") or "us-central1"
+DAG_ID = os.getenv("DAG_ID") or "sql_validation_dag"
+AIRFLOW_WEBSERVER_URL = os.getenv("AIRFLOW_WEBSERVER_URL") or "https://b7addde4a0c4cd8aae13f1e316487fd-dot-us-central1.composer.googleusercontent.com"
 # API de lectura para el dashboard (no rompe github_webhook)
 RESULTS_TABLE = os.getenv("RESULTS_TABLE", "validaciones.resultados")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
@@ -164,7 +164,9 @@ def github_webhook(request):
             continue
         dest = f"sha={commit_sha}/{repo_file}"
         bucket.blob(dest).upload_from_string(r.text, content_type="text/plain")
-        _trigger_dag(f"gs://{RAW_BUCKET}/{dest}", commit_sha, author, repo_file)
+        parts = repo_file.split("/")
+        student_author = parts[1] if len(parts) > 1 and parts[0] == "estudiantes" else author
+        _trigger_dag(f"gs://{RAW_BUCKET}/{dest}", commit_sha, student_author, repo_file)
 
     return (f"processed {len(sql_files)} files", 200)
 

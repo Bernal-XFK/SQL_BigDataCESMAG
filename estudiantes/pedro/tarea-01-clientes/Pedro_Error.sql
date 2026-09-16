@@ -3,3 +3,5 @@
 -- Tarea: tarea-01-clientes
 
 SELEC id_cliente, nombre FROM infrabigdataces.sandbox_estudiantes.clientes
+
+-- Disparo de validacion en vivo para Pedro

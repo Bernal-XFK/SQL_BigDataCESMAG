@@ -8,3 +8,5 @@ SELECT
   'laura.gomez@cesmag.edu.co' AS correo_institucional,
   'Pasto' AS ciudad,
   CURRENT_TIMESTAMP() AS fecha_envio;
+
+-- Disparo de validacion en vivo para Laura
