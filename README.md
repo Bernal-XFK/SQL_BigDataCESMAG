@@ -1,6 +1,10 @@
 # SQL_BigDataCESMAG
 Repo para guardar las consultas generadas en SQL para el uso de google console
 
+## 🌐 Demo en vivo
+**Dashboard de Monitoreo Académico:** https://sql-big-data-cesmag.vercel.app
+(API: `executions-api` en `europe-west1` → BigQuery `infrabigdataces.validaciones.resultados`)
+
 ## Estructura
 ```
 estudiantes/{nombre}/{tarea}/*.sql
