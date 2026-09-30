@@ -335,3 +335,21 @@ def executions_api(request):
             print(f"[WARN-ROW] fila omitida por formato inesperado: {e}")
             continue
     return (json.dumps(data), 200, headers)
+
+
+# Cloud Run WSGI wrapper
+from flask import Flask, request as flask_request
+
+app = Flask(__name__)
+
+@app.route("/")
+def health():
+    return {"status": "ok"}
+
+@app.route("/executions", methods=["GET", "OPTIONS"])
+def executions():
+    return executions_api(flask_request)
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    return github_webhook(flask_request)
