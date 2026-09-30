@@ -45,16 +45,22 @@ def _trigger_dag(gcs_path: str, commit_sha: str, author: str, repo_file: str):
     # Metodo 1: Airflow REST API (si se configuro AIRFLOW_WEBSERVER_URL)
     if AIRFLOW_WEBSERVER_URL:
         try:
-            import google.auth
+            from google.oauth2 import id_token
             from google.auth.transport.requests import Request
+            import google.auth
 
             auth_req = Request()
-            credentials, _ = google.auth.default()
-            credentials.refresh(auth_req)
+            clean_url = AIRFLOW_WEBSERVER_URL.rstrip("/")
+            try:
+                bearer_token = id_token.fetch_id_token(auth_req, clean_url)
+            except Exception:
+                credentials, _ = google.auth.default()
+                credentials.refresh(auth_req)
+                bearer_token = credentials.token
 
-            url = f"{AIRFLOW_WEBSERVER_URL.rstrip('/')}/api/v1/dags/{DAG_ID}/dagRuns"
+            url = f"{clean_url}/api/v1/dags/{DAG_ID}/dagRuns"
             headers = {
-                "Authorization": f"Bearer {credentials.token}",
+                "Authorization": f"Bearer {bearer_token}",
                 "Content-Type": "application/json",
             }
             resp = requests.post(url, json={"conf": conf_payload}, headers=headers, timeout=20)
