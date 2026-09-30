@@ -249,7 +249,9 @@ def executions_api(request):
     query = (
         "SELECT commit_sha, author, repo_file, gcs_path, job_id, "
         "estimated_bytes, validated_at, status "
-        f"FROM `{table}` ORDER BY validated_at DESC LIMIT 100"
+        f"FROM `{table}` "
+        "WHERE LOWER(author) != 'unknown' AND LOWER(repo_file) != 'unknown' "
+        "ORDER BY validated_at DESC LIMIT 100"
     )
     try:
         from google.cloud import bigquery
@@ -275,11 +277,16 @@ def executions_api(request):
     for i, row in enumerate(rows):
         get = row.get if hasattr(row, "get") else lambda k, d=None: row[k] if k in row else d
         try:
-            author = get("author") or "Desconocido"
-            repo_file = get("repo_file") or get("gcs_path") or ""
+            author = str(get("author") or "").strip()
+            repo_file = str(get("repo_file") or get("gcs_path") or "").strip()
+            
+            # Omitir entregas sin autor o sin archivo válido
+            if not author or not repo_file or author.lower() == "unknown" or repo_file.lower() == "unknown":
+                continue
+
             status = (get("status") or "")
             data.append({
-                "id": i + 1,
+                "id": len(data) + 1,
                 "studentName": author,
                 "folderName": repo_file,
                 "queryStatus": "success" if str(status).upper() == "SUCCESS" else "error",

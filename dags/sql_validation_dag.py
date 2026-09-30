@@ -121,11 +121,26 @@ with DAG(
         error_message = data.get("error_message")
         step_failed = data.get("step_failed")
 
+        gcs_path = conf.get("gcs_path")
+        author = conf.get("author", "unknown")
+        repo_file = conf.get("repo_file", "unknown")
+
+        # Omitir publicación si la ejecución es un manual trigger sin parámetros válidos
+        if not gcs_path or (author == "unknown" and repo_file == "unknown"):
+            print("WARN: Omitiendo publicación en BigQuery. Ejecución sin conf/gcs_path válido.")
+            return {
+                "commit_sha": "unknown",
+                "author": author,
+                "repo_file": repo_file,
+                "status": "SKIPPED",
+                "message": "Ejecución de prueba manual omitida",
+            }
+
         row = {
             "commit_sha": conf.get("commit_sha", "unknown"),
-            "author": conf.get("author", "unknown"),
-            "repo_file": conf.get("repo_file", "unknown"),
-            "gcs_path": conf.get("gcs_path", ""),
+            "author": author,
+            "repo_file": repo_file,
+            "gcs_path": gcs_path or "",
             "job_id": data.get("job_id"),
             "estimated_bytes": data.get("estimated_bytes"),
             "validated_at": datetime.utcnow().isoformat(),

@@ -90,7 +90,7 @@ git config --global user.email "tucorreo@cesmag.edu.co"
 **Ejemplo real:**
 
 ```bash
-git config --global user.name "Deivid Andres Cardenas Lopez"
+git config --global user.name "Deivid Julian Cardenas Melo"
 git config --global user.email "deivid.cardenas@cesmag.edu.co"
 ```
 
@@ -136,7 +136,7 @@ estudiantes/
               └── TuNombre_Tema.sql
 ```
 
-Ejemplo real (estudiante: Deivid Andres Cardenas Lopez):
+Ejemplo real (estudiante: Deivid Julian Cardenas Melo):
 
 ```
 estudiantes/
@@ -186,7 +186,7 @@ SELECT
 **Ejemplo completo listo para usar:**
 
 ```sql
--- Estudiante: Deivid Andres Cardenas Lopez
+-- Estudiante: Deivid Julian Cardenas Melo
 -- Taller: taller-02-analisis-ventas
 -- Fecha: 29/09/2026
 -- Descripcion: Consulta que retorna datos de ventas agrupados por categoria
@@ -252,10 +252,10 @@ git commit -m "Entrega: nombre-taller - Tu Nombre Completo"
 Ejemplo:
 
 ```bash
-git commit -m "Entrega: taller-02-analisis-ventas - Deivid Andres Cardenas Lopez"
+git commit -m "Entrega: taller-02-analisis-ventas - Deivid Julian Cardenas Melo"
 ```
 
-Verás un mensaje como: `[main abc1234] Entrega: taller-02-analisis-ventas - Deivid Andres Cardenas Lopez`
+Verás un mensaje como: `[main abc1234] Entrega: taller-02-analisis-ventas - Deivid Julian Cardenas Melo`
 
 ---
 
@@ -404,12 +404,12 @@ git push origin main
 
 | Qué | Formato | Ejemplo |
 |-----|---------|---------|
-| Nombre en git config | 2 nombres + 2 apellidos | `Deivid Andres Cardenas Lopez` |
+| Nombre en git config | 2 nombres + 2 apellidos | `Deivid Julian Cardenas Melo` |
 | Tu carpeta | primer nombre, minúsculas | `deivid` |
 | Carpeta de tarea | minúsculas con guiones | `taller-02-analisis-ventas` |
 | Archivo SQL | `TuNombre_Tema.sql` | `Deivid_AnalisisVentas.sql` |
-| Encabezado del SQL | 2 nombres + 2 apellidos | `-- Estudiante: Deivid Andres Cardenas Lopez` |
-| Mensaje de commit | nombre completo en el texto | `Entrega: taller-02 - Deivid Andres Cardenas Lopez` |
+| Encabezado del SQL | 2 nombres + 2 apellidos | `-- Estudiante: Deivid Julian Cardenas Melo` |
+| Mensaje de commit | nombre completo en el texto | `Entrega: taller-02 - Deivid Julian Cardenas Melo` |
 
 ---
 

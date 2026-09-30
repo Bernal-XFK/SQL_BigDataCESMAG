@@ -1,4 +1,4 @@
--- Estudiante: Deivid Andres Cardenas Lopez
+-- Estudiante: Deivid Julian Cardenas Melo
 -- Taller: taller-02-analisis-ventas
 -- Fecha: 29/09/2026
 -- Descripcion: Taller 2 — Analisis de ventas por categoria de producto.
