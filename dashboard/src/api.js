@@ -39,11 +39,20 @@ function formatTimestamp(value) {
 function normalizeExecution(item, index) {
   const rawStatus = String(item?.queryStatus ?? item?.status ?? '').toUpperCase()
   return {
-    id: item?.id ?? index + 1,
-    studentName: item?.studentName ?? item?.author ?? 'Desconocido',
-    folderName: item?.folderName ?? item?.repo_file ?? item?.gcs_path ?? '—',
+    id: item?.id ?? item?.commitSha ?? index + 1,
+    studentName: item?.studentName ?? item?.author ?? 'Sin identificar',
+    folderName: item?.folderName ?? item?.repo_file ?? item?.gcs_path ?? 'Sin carpeta',
     queryStatus: rawStatus === 'SUCCESS' ? 'success' : 'error',
     timestamp: formatTimestamp(item?.timestamp ?? item?.validated_at ?? ''),
+    commitSha: item?.commitSha ?? '',
+    estimatedBytes: item?.estimatedBytes ?? null,
+    // SQL exacto enviado por el estudiante (persistido por el DAG en BigQuery)
+    sqlText: item?.sqlText ?? '',
+    // Diagnóstico de BigQuery cuando falla
+    errorMessage: item?.errorMessage ?? '',
+    errorType: item?.errorType ?? '',
+    // Filas devueltas por BigQuery (JSON), solo si la consulta fue exitosa
+    resultRows: Array.isArray(item?.resultRows) ? item.resultRows : [],
   }
 }
 

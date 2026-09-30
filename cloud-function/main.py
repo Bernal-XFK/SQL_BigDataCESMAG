@@ -1,10 +1,14 @@
 import hmac
 import hashlib
 import os
+import re
 import json
 import base64
 import requests
 from google.cloud import storage, secretmanager
+
+# Nombre completo del estudiante: encabezado "-- Estudiante: Nombre Apellido"
+STUDENT_RE = re.compile(r"^\s*--\s*Estudiante:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 # Config via env vars (con fallbacks para que nunca queden vacíos)
 GITHUB_TOKEN_SECRET = os.getenv("GITHUB_TOKEN_SECRET", "github-token")
@@ -33,13 +37,15 @@ def _valid_signature(secret: str, payload: bytes, header_sig: str) -> bool:
     return hmac.compare_digest(f"sha256={mac}", header_sig)
 
 
-def _trigger_dag(gcs_path: str, commit_sha: str, author: str, repo_file: str):
+def _trigger_dag(gcs_path: str, commit_sha: str, author: str, repo_file: str,
+                 student_name: str = ""):
     """Dispara el DAG en Composer 2 mediante executeAirflowCommand o Airflow REST API."""
     conf_payload = {
         "gcs_path": gcs_path,
         "commit_sha": commit_sha,
         "author": author,
         "repo_file": repo_file,
+        "student_name": student_name,
     }
 
     # Metodo 1: Airflow REST API (si se configuro AIRFLOW_WEBSERVER_URL)
@@ -171,8 +177,13 @@ def github_webhook(request):
         dest = f"sha={commit_sha}/{repo_file}"
         bucket.blob(dest).upload_from_string(r.text, content_type="text/plain")
         parts = repo_file.split("/")
-        student_author = parts[1] if len(parts) > 1 and parts[0] == "estudiantes" else author
-        _trigger_dag(f"gs://{RAW_BUCKET}/{dest}", commit_sha, student_author, repo_file)
+        folder_student = parts[1] if len(parts) > 1 and parts[0] == "estudiantes" else author
+        # Prioridad: encabezado "-- Estudiante: ..." del SQL > carpeta > autor del push
+        m = STUDENT_RE.search(r.text)
+        student_name = m.group(1).strip() if m else folder_student
+        print(f"Entrega detectada: estudiante={student_name!r} archivo={repo_file}")
+        _trigger_dag(f"gs://{RAW_BUCKET}/{dest}", commit_sha, author, repo_file,
+                     student_name)
 
     return (f"processed {len(sql_files)} files", 200)
 
@@ -246,18 +257,34 @@ def executions_api(request):
                 405, headers)
 
     table = os.getenv("RESULTS_TABLE", RESULTS_TABLE)
-    query = (
+    # Consulta completa (con campos nuevos); si la tabla aún tiene el esquema
+    # viejo, cae al SELECT base para no dejar caído el dashboard.
+    SELECT_FULL = (
+        "SELECT commit_sha, author, repo_file, gcs_path, job_id, "
+        "estimated_bytes, validated_at, status, "
+        "sql_text, error_message, error_type, step_failed, result_rows "
+        f"FROM `{table}` "
+        "ORDER BY validated_at DESC LIMIT 100"
+    )
+    SELECT_BASE = (
         "SELECT commit_sha, author, repo_file, gcs_path, job_id, "
         "estimated_bytes, validated_at, status "
         f"FROM `{table}` "
-        "WHERE LOWER(author) != 'unknown' AND LOWER(repo_file) != 'unknown' "
         "ORDER BY validated_at DESC LIMIT 100"
     )
     try:
         from google.cloud import bigquery
+        from google.api_core.exceptions import BadRequest
         client_kwargs = {"project": PROJECT_ID} if PROJECT_ID else {}
         client = bigquery.Client(**client_kwargs)
-        rows = list(client.query(query).result())
+        try:
+            rows = list(client.query(SELECT_FULL).result())
+        except BadRequest as e:
+            # Esquema viejo sin columnas nuevas: mensaje accionable en consola.
+            print(f"[WARN-ESQUEMA] La tabla {table} no tiene las columnas "
+                  f"nuevas (sql_text/result_rows/...): {e}. "
+                  f"Ejecuta el ALTER TABLE del README de despliegue.")
+            rows = list(client.query(SELECT_BASE).result())
     except ImportError:
         return (json.dumps({"error": "bigquery_lib_missing",
                             "hint": "Falta google-cloud-bigquery en requirements.txt. "
@@ -272,26 +299,39 @@ def executions_api(request):
                                     f"tenga BigQuery Job User + Data Viewer."}),
                 500, headers)
 
-    # Tabla vacía -> [] para que el frontend use su fallback local solo en dev.
+    # Nunca descartamos filas: todas las entregas deben verse en el dashboard.
     data = []
-    for i, row in enumerate(rows):
+    for row in rows:
         get = row.get if hasattr(row, "get") else lambda k, d=None: row[k] if k in row else d
         try:
-            author = str(get("author") or "").strip()
-            repo_file = str(get("repo_file") or get("gcs_path") or "").strip()
-            
-            # Omitir entregas sin autor o sin archivo válido
-            if not author or not repo_file or author.lower() == "unknown" or repo_file.lower() == "unknown":
-                continue
+            author = str(get("author") or "").strip() or "Sin identificar"
+            repo_file = str(get("repo_file") or "").strip()
+            gcs_path = str(get("gcs_path") or "").strip()
+            if not repo_file or repo_file.lower() == "unknown":
+                # Reconstruye la ruta desde gcs_path: sha=<sha>/estudiantes/...
+                m = re.search(r"sha=[^/]+/(estudiantes/\S+\.sql)$", gcs_path)
+                repo_file = m.group(1) if m else (gcs_path or "Sin carpeta")
 
-            status = (get("status") or "")
+            status = str(get("status") or "")
+            result_rows_raw = get("result_rows")
+            try:
+                result_rows = json.loads(result_rows_raw) if result_rows_raw else []
+            except (TypeError, ValueError):
+                result_rows = []
             data.append({
                 "id": len(data) + 1,
                 "studentName": author,
                 "folderName": repo_file,
-                "queryStatus": "success" if str(status).upper() == "SUCCESS" else "error",
+                "queryStatus": "success" if status.upper() == "SUCCESS" else "error",
                 "timestamp": _format_timestamp(get("validated_at")),
+                "commitSha": str(get("commit_sha") or ""),
+                "estimatedBytes": get("estimated_bytes"),
+                "sqlText": str(get("sql_text") or ""),
+                "errorMessage": str(get("error_message") or ""),
+                "errorType": str(get("error_type") or ""),
+                "resultRows": result_rows,
             })
-        except Exception:
+        except Exception as e:
+            print(f"[WARN-ROW] fila omitida por formato inesperado: {e}")
             continue
     return (json.dumps(data), 200, headers)

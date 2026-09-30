@@ -18,17 +18,6 @@ const FILTERS = [
   { key: 'error', label: 'Fallidos' },
 ]
 
-// SQL de ejemplo para la vista "Ver SQL". Cuando exista API real,
-// este campo vendrá del backend (executions[].query).
-function sampleQuery(execution) {
-  if (!execution || !execution.folderName || execution.folderName === 'unknown') {
-    return `-- Consulta SQL no disponible\n-- La entrega no especifica una ruta de archivo válida.`
-  }
-  const table = execution.folderName.replace(/[^a-z0-9_]/gi, '_').toLowerCase()
-  const student = execution.studentName && execution.studentName !== 'unknown' ? execution.studentName : 'Estudiante'
-  return `-- ${execution.folderName} / ${student}\nSELECT *\nFROM \`laboratorio-bigdata.cesmag.${table}\`\nLIMIT 100;`
-}
-
 function StatusBadge({ status }) {
   if (status === 'success') {
     return (
@@ -41,8 +30,132 @@ function StatusBadge({ status }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
       <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
-      Fallo en Sintaxis/Ejecución
+      Fallo en la Ejecución
     </span>
+  )
+}
+
+// --- Resaltado de sintaxis SQL (ligero, sin dependencias) --------------------
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE',
+  'BETWEEN', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ON',
+  'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'UNION', 'ALL',
+  'DISTINCT', 'AS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'HAVING', 'COUNT',
+  'SUM', 'AVG', 'MIN', 'MAX', 'CAST', 'SAFE_CAST', 'CREATE', 'TABLE', 'INSERT',
+  'UPDATE', 'DELETE', 'DROP', 'WITH', 'OVER', 'PARTITION', 'ROW_NUMBER', 'RANK',
+])
+
+function tokenizeSql(code) {
+  const pattern =
+    /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*")|(`[^`]*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_][A-Za-z0-9_]*\b)/g
+  const parts = []
+  let lastIndex = 0
+  let match
+  while ((match = pattern.exec(code)) !== null) {
+    if (match.index > lastIndex) parts.push({ type: 'plain', text: code.slice(lastIndex, match.index) })
+    const [, comment, string, backtick, number, word] = match
+    if (comment !== undefined) parts.push({ type: 'comment', text: comment })
+    else if (string !== undefined) parts.push({ type: 'string', text: string })
+    else if (backtick !== undefined) parts.push({ type: 'identifier', text: backtick })
+    else if (number !== undefined) parts.push({ type: 'number', text: number })
+    else if (SQL_KEYWORDS.has(word.toUpperCase())) parts.push({ type: 'keyword', text: word })
+    else parts.push({ type: 'plain', text: word })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < code.length) parts.push({ type: 'plain', text: code.slice(lastIndex) })
+  return parts
+}
+
+const TOKEN_CLASSES = {
+  keyword: 'text-fuchsia-400 font-semibold',
+  string: 'text-emerald-300',
+  number: 'text-amber-300',
+  comment: 'text-slate-500 italic',
+  identifier: 'text-sky-300',
+  plain: 'text-slate-200',
+}
+
+function SqlCode({ code }) {
+  const parts = useMemo(() => tokenizeSql(code || ''), [code])
+  return (
+    <pre className="overflow-x-auto rounded-lg bg-slate-950 p-4 font-mono text-[13px] leading-relaxed ring-1 ring-slate-800">
+      <code>
+        {parts.map((part, i) => (
+          <span key={i} className={TOKEN_CLASSES[part.type]}>
+            {part.text}
+          </span>
+        ))}
+      </code>
+    </pre>
+  )
+}
+
+// Mensaje de error amigable según el tipo clasificado por el DAG
+function friendlyError(errorType, errorMessage) {
+  switch (errorType) {
+    case 'IAM_PERMISSIONS':
+      return {
+        title: 'Sin permisos para esta tabla',
+        detail: 'La consulta intentó acceder a un dataset sin los permisos IAM necesarios (error 403). Avisa al profesor para que otorgue "BigQuery Data Viewer" sobre el dataset.',
+      }
+    case 'SINTAXIS_SQL':
+      return {
+        title: 'Error de sintaxis SQL',
+        detail: errorMessage || 'BigQuery reportó un error de sintaxis. Revisa tu consulta y vuelve a intentar.',
+      }
+    case 'TABLA_NO_EXISTE':
+      return {
+        title: 'Tabla o dataset no encontrado',
+        detail: errorMessage || 'Revisa que el nombre de la tabla esté bien escrito, incluidos proyecto y dataset.',
+      }
+    default:
+      return {
+        title: 'Error de ejecución en BigQuery',
+        detail: errorMessage || 'La validación en BigQuery reportó un fallo. Revisa la consulta y vuelve a subir el archivo .sql.',
+      }
+  }
+}
+
+function ResultTable({ rows }) {
+  const columns = useMemo(() => {
+    const cols = []
+    for (const row of rows) {
+      for (const key of Object.keys(row)) {
+        if (!cols.includes(key)) cols.push(key)
+      }
+    }
+    return cols
+  }, [rows])
+  if (!rows.length) {
+    return (
+      <p className="rounded-lg bg-slate-50 px-4 py-6 text-center text-sm text-slate-500 ring-1 ring-inset ring-slate-200">
+        La consulta se ejecutó con éxito pero no devolvió filas.
+      </p>
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            {columns.map((col) => (
+              <th key={col} scope="col" className="whitespace-nowrap px-4 py-2.5 font-medium">{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row, i) => (
+            <tr key={i} className="transition hover:bg-slate-50">
+              {columns.map((col) => (
+                <td key={col} className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-700">
+                  {row[col] === null || row[col] === undefined ? <span className="italic text-slate-400">null</span> : String(row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -83,8 +196,10 @@ function EmptyState({ onClear }) {
 }
 
 function SqlModal({ execution, onClose }) {
+  const [tab, setTab] = useState('code')
   useEffect(() => {
     if (!execution) return
+    setTab('code')
     const onKey = (event) => {
       if (event.key === 'Escape') onClose()
     }
@@ -99,9 +214,16 @@ function SqlModal({ execution, onClose }) {
 
   if (!execution) return null
 
+  const hasSql = Boolean(execution.sqlText && execution.sqlText.trim())
+  const err = friendlyError(execution.errorType, execution.errorMessage)
+  const TABS = [
+    { key: 'code', label: 'Código Enviado', icon: FileCode2 },
+    { key: 'result', label: 'Resultado de la Ejecución', icon: Database },
+  ]
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-900/50 p-0 sm:items-center sm:p-6"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-900/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       onClick={onClose}
       role="presentation"
     >
@@ -109,15 +231,24 @@ function SqlModal({ execution, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="sql-modal-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-xl bg-white shadow-xl sm:rounded-xl"
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 id="sql-modal-title" className="text-sm font-semibold text-slate-900">
-              Consulta SQL — {execution.studentName && execution.studentName !== 'unknown' ? execution.studentName : 'Estudiante'}
-            </h2>
-            <p className="mt-0.5 font-mono text-xs text-slate-500">{execution.folderName && execution.folderName !== 'unknown' ? execution.folderName : 'Sin carpeta'}</p>
+        {/* Encabezado */}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900">
+              <FileCode2 className="h-5 w-5 text-white" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 id="sql-modal-title" className="text-base font-semibold text-slate-900">
+                {execution.studentName && execution.studentName !== 'unknown' ? execution.studentName : 'Sin identificar'}
+              </h2>
+              <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-slate-500">
+                <Folder className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                {execution.folderName && execution.folderName !== 'unknown' ? execution.folderName : 'Sin carpeta'}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -129,18 +260,70 @@ function SqlModal({ execution, onClose }) {
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <div className="space-y-4 px-5 py-4">
+
+        {/* Tabs */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-6">
+          <div className="flex gap-1" role="tablist" aria-label="Secciones del detalle">
+            {TABS.map(({ key, label, icon: Icon }) => {
+              const active = tab === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(key)}
+                  className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 ${
+                    active
+                      ? 'border-slate-900 text-slate-900'
+                      : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  {label}
+                </button>
+              )
+            })}
+          </div>
           <StatusBadge status={execution.queryStatus} />
-          <pre className="overflow-x-auto rounded-md bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-100">
-            <code>{sampleQuery(execution)}</code>
-          </pre>
-          {execution.queryStatus === 'error' && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 ring-1 ring-inset ring-red-600/20">
-              La validación en BigQuery reportó un fallo de sintaxis o de ejecución para esta
-              entrega. Revisa la consulta y vuelve a subir el archivo .sql.
-            </p>
+        </div>
+
+        {/* Contenido */}
+        <div className="space-y-4 px-6 py-5">
+          {tab === 'code' ? (
+            hasSql ? (
+              <SqlCode code={execution.sqlText} />
+            ) : (
+              <p className="rounded-lg bg-amber-50 px-4 py-6 text-center text-sm text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                El texto SQL de esta entrega no está disponible (fue registrada antes de la nueva versión del pipeline).
+              </p>
+            )
+          ) : execution.queryStatus === 'success' ? (
+            <div className="space-y-3">
+              {typeof execution.estimatedBytes === 'number' && (
+                <p className="text-xs text-slate-500">
+                  Datos procesados: aprox. {(execution.estimatedBytes / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
+              <ResultTable rows={execution.resultRows || []} />
+            </div>
+          ) : (
+            <div className="rounded-lg bg-red-50 px-4 py-4 ring-1 ring-inset ring-red-600/20">
+              <p className="flex items-center gap-2 text-sm font-semibold text-red-800">
+                <XCircle className="h-4 w-4" aria-hidden="true" />
+                {err.title}
+              </p>
+              <p className="mt-2 break-words font-mono text-xs leading-relaxed text-red-700">
+                {err.detail}
+              </p>
+            </div>
           )}
-          <p className="text-xs text-slate-500">Registrado: {execution.timestamp}</p>
+          <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">
+            Registrado: {execution.timestamp}
+            {execution.commitSha && (
+              <> · commit <span className="font-mono">{execution.commitSha.slice(0, 8)}</span></>
+            )}
+          </p>
         </div>
       </div>
     </div>
