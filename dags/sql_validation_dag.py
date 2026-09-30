@@ -17,8 +17,10 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.decorators import task
+from google.auth import default as default_credentials
 from google.cloud import storage, bigquery
 from google.api_core.exceptions import Forbidden, NotFound
+from bigquery_auth import create_bigquery_client
 
 RAW_BUCKET_FALLBACK = "cesmag-sql-raw"
 SANDBOX_DATASET = "sandbox_estudiantes"
@@ -28,6 +30,15 @@ MAX_RESULT_ROWS = 50              # filas que viajan al dashboard
 
 FORBIDDEN = re.compile(r"\b(DROP\s+TABLE|DELETE\s+FROM(?!\s+\S+\s+WHERE)|TRUNCATE)\b", re.I)
 STUDENT_RE = re.compile(r"^\s*--\s*Estudiante:\s*(.+?)\s*$", re.I | re.M)
+
+
+def _bigquery_client() -> bigquery.Client:
+    """Build a BigQuery client able to query Google Drive external tables."""
+    return create_bigquery_client(
+        project="infrabigdataces",
+        credentials_factory=default_credentials,
+        client_factory=bigquery.Client,
+    )
 
 
 def _parse_gcs(uri: str):
@@ -127,7 +138,7 @@ with DAG(
         if data.get("status") == "FAILED":
             return data
         sql = data["sql"]
-        client = bigquery.Client(project="infrabigdataces")
+        client = _bigquery_client()
         job_cfg = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         try:
             job = client.query(sql, job_config=job_cfg)
@@ -142,7 +153,7 @@ with DAG(
             return data
         sql = data["sql"]
         conf = data.get("conf", {})
-        client = bigquery.Client(project="infrabigdataces")
+        client = _bigquery_client()
         job_cfg = bigquery.QueryJobConfig(
             maximum_bytes_billed=MAX_BYTES_BILLED,
             labels={"author": re.sub(r"[^a-z0-9_-]", "-", conf.get("author", "unknown").lower())[:32],
@@ -165,7 +176,7 @@ with DAG(
 
     @task
     def publish(data: dict):
-        client = bigquery.Client(project="infrabigdataces")
+        client = _bigquery_client()
         conf = data.get("conf", {})
         status = data.get("status", "SUCCESS")
 
