@@ -1,0 +1,3 @@
+SELECT * 
+FROM `infrabigdataces.BRONCE.ESTUDIANTES`
+LIMIT 100;
