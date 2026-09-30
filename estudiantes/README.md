@@ -8,11 +8,13 @@ estudiantes/{nombre-estudiante}/{tarea}/*.sql
 
 Ejemplo:
 ```
-estudiantes/andres/tarea-01-clientes/Andres_Clientes-Gam.sql
+estudiantes/deivid/taller-02-analisis-ventas/Deivid_AnalisisVentas.sql
 ```
 
 Reglas:
 1. Un archivo `.sql` por entrega.
-2. Nombre archivo: `{Nombre}_{Tema}.sql`
-3. Hacer `push` a rama `entrega/nombre` + PR a `main`.
-4. El `push` / PR es el trigger que dispara el webhook -> Cloud Function -> Composer -> BigQuery.
+2. Nombre de carpeta: solo minúsculas, sin espacios, sin acentos (usa `-` como separador).
+3. Nombre de archivo: `{Nombre}_{Tema}.sql`
+4. El encabezado del archivo debe incluir el nombre completo del estudiante con 2 nombres y 2 apellidos.
+5. Hacer `push` directamente a la rama `main` — sin crear ramas adicionales.
+6. El `push` dispara automáticamente el webhook → Cloud Function → Composer → BigQuery.
