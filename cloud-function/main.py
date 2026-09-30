@@ -21,7 +21,10 @@ DAG_ID = os.getenv("DAG_ID") or "sql_validation_dag"
 AIRFLOW_WEBSERVER_URL = os.getenv("AIRFLOW_WEBSERVER_URL") or "https://b7addde4a0c4cd8aae13f1e316487fd-dot-us-central1.composer.googleusercontent.com"
 # API de lectura para el dashboard (no rompe github_webhook)
 RESULTS_TABLE = os.getenv("RESULTS_TABLE", "validaciones.resultados")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,https://sql-big-data-cesmag.vercel.app",
+)
 
 
 def _get_secret(secret_id: str) -> str:
@@ -342,12 +345,13 @@ from flask import Flask, request as flask_request
 
 app = Flask(__name__)
 
-@app.route("/")
+@app.route("/healthz")
 def health():
     return {"status": "ok"}
 
+@app.route("/", methods=["GET", "OPTIONS"])
 @app.route("/executions", methods=["GET", "OPTIONS"])
-def executions():
+def executions_endpoint():
     return executions_api(flask_request)
 
 @app.route("/webhook", methods=["POST"])
