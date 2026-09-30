@@ -1,3 +1,64 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Sistema visual del Laboratorio CESMAG */
+:root {
+  color-scheme: light;
+  --lab-ink: #12232c;
+  --lab-teal: #0f766e;
+  --lab-canvas: #f4f7f7;
+  --lab-surface: #ffffff;
+  --lab-line: #e2e8f0;
+  --lab-motion-fast: 120ms;
+  --lab-motion: 220ms;
+  --lab-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100dvh;
+  background: var(--lab-canvas);
+}
+
+/* Animaciones del dashboard */
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-modal-in { animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-in { animation: fade-in 0.3s ease-out both; }
+.animate-row-in { animation: row-in 0.25s ease-out both; }
+
+dialog::backdrop {
+  background: rgb(2 6 23 / 55%);
+  backdrop-filter: blur(4px);
+}
+
+dialog:not([open]) { display: none; }
+dialog[open] { display: flex; }
+
+/* Scrollbars sutiles en bloques de código / tablas de resultados */
+::-webkit-scrollbar { height: 8px; width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+pre::-webkit-scrollbar-thumb { background: #334155; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -60,6 +60,8 @@ export function useExecutions() {
   const [executions, setExecutions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -72,6 +74,7 @@ export function useExecutions() {
         setLoading(false)
         return
       }
+      setLoading(true)
       try {
         const res = await fetch(API_URL)
         if (!res.ok) throw new Error(`API respondió ${res.status}`)
@@ -82,9 +85,9 @@ export function useExecutions() {
         setExecutions(data.map(normalizeExecution))
         setError(null)
         setLoading(false)
+        setLastUpdated(new Date())
       } catch {
         if (cancelled) return
-        setExecutions([])
         setError(LIVE_ERROR)
         setLoading(false)
       }
@@ -97,9 +100,17 @@ export function useExecutions() {
       cancelled = true
       clearInterval(intervalId)
     }
-  }, [])
+  }, [reloadToken])
 
   // usingFallback se mantiene en false solo por compatibilidad con
   // consumidores antiguos; el modo prueba ya no existe.
-  return { executions, loading, error, usingFallback: false }
+  return {
+    executions,
+    loading,
+    error,
+    usingFallback: false,
+    lastUpdated,
+    refreshMs: REFRESH_MS,
+    refresh: () => setReloadToken((token) => token + 1),
+  }
 }
